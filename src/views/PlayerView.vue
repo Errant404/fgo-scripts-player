@@ -171,6 +171,10 @@ const exit = () => {
   overflow: hidden;
   cursor: pointer;
   aspect-ratio: 1024 / 626;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .background {
@@ -181,6 +185,8 @@ const exit = () => {
   height: 100%;
   background-size: cover;
   background-position: center;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .characters {
@@ -215,6 +221,7 @@ const exit = () => {
   background: rgba(0, 0, 0, 0.8);
   padding: 20px;
   box-sizing: border-box;
+  user-select: none;
 }
 
 .speaker {

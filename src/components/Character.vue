@@ -85,7 +85,7 @@ const composeCharacterImage = async (
   imgH: number,
 ) => {
   const bodyHeight = 768
-  
+
   // Canvas should only be as tall as the body part we're using
   const canvas = document.createElement('canvas')
   canvas.width = imgW
@@ -164,7 +164,7 @@ const bodySourceHeight = 768
 
 const displayStyles = computed(() => {
   if (!scriptData.value || !composedImageUrl.value) return null
-  
+
   const script = scriptData.value
   const imgW = imageSize.value.width
 
@@ -188,9 +188,9 @@ const displayStyles = computed(() => {
 <template>
   <div class="character-container" v-if="scriptData && composedImageUrl">
     <!-- Composed character (body + face already merged) -->
-    <img 
-      class="character-composed" 
-      :src="composedImageUrl" 
+    <img
+      class="character-composed"
+      :src="composedImageUrl"
       :style="displayStyles"
       alt="character"
     />
@@ -212,5 +212,8 @@ const displayStyles = computed(() => {
   object-fit: fill;
   image-rendering: auto;
   image-rendering: -webkit-optimize-contrast;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 </style>
