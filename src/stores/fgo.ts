@@ -1,7 +1,18 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { getWars, getWar, getQuest, type RegionType, Region } from '@/api/atlas'
 import type { War as WarSchema, Quest as QuestSchema } from '@atlasacademy/api-connector'
+
+// Type for quest with processed script information
+export interface QuestWithScripts extends QuestSchema.Quest {
+  phaseScripts: Array<{
+    phase: number
+    scripts: Array<{
+      scriptId: string
+      script: string
+    }>
+  }>
+}
 
 export const useFgoStore = defineStore('fgo', () => {
   const region = ref<RegionType>(Region.JP)
@@ -9,7 +20,7 @@ export const useFgoStore = defineStore('fgo', () => {
   const currentWarId = ref<number | null>(null)
   const currentWar = ref<WarSchema.War | null>(null)
   const currentQuestId = ref<number | null>(null)
-  const currentQuest = ref<QuestSchema.Quest | null>(null)
+  const currentQuest = ref<QuestWithScripts | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -42,7 +53,8 @@ export const useFgoStore = defineStore('fgo', () => {
     isLoading.value = true
     error.value = null
     try {
-      currentQuest.value = await getQuest(questId, region.value)
+      const quest = await getQuest(questId, region.value)
+      currentQuest.value = quest as QuestWithScripts
       currentQuestId.value = questId
     } catch (e: any) {
       error.value = e.message || 'Failed to fetch quest'

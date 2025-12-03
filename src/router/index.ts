@@ -10,7 +10,7 @@ const router = createRouter({
       component: SelectorView,
     },
     {
-      path: '/play/:questId',
+      path: '/play/:questId/:phase/:scriptIdx',
       name: 'player',
       component: () => import('../views/PlayerView.vue'),
     },

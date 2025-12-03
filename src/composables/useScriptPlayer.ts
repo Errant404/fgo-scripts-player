@@ -145,30 +145,37 @@ export function useScriptPlayer() {
     }
   }
 
-  const loadScript = async (questData: any, region: string = 'JP') => {
+  const loadScript = async (
+    questData: any,
+    region: string = 'JP',
+    phase: number = 1,
+    scriptIdx: number = 0
+  ) => {
     isLoading.value = true
     state.value.isFinished = false
     currentRegion.value = region
 
-    // Find script URLs
-    // Heuristic: look for phaseScripts -> scripts -> script url
+    // Find script URLs based on phase and scriptIdx
     let scriptUrl = ''
 
     if (questData.phaseScripts) {
-      // Find phase 1 or first available
-      const phase =
-        questData.phaseScripts.find((p: any) => p.phase === 1) || questData.phaseScripts[0]
-      if (phase && phase.scripts && phase.scripts.length > 0) {
-        // Check if script is an object with 'script' property (URL)
-        // The example showed: { script: "url", ... }
-        if (typeof phase.scripts[0].script === 'string') {
-          scriptUrl = phase.scripts[0].script
+      // Find the specific phase
+      const phaseData = questData.phaseScripts.find((p: any) => p.phase === phase)
+
+      if (phaseData && phaseData.scripts && phaseData.scripts.length > scriptIdx) {
+        // Get the specific script by index
+        const scriptData = phaseData.scripts[scriptIdx]
+        if (typeof scriptData.script === 'string') {
+          scriptUrl = scriptData.script
         }
       }
     }
 
     if (!scriptUrl) {
-      console.error('No script URL found in quest data', questData)
+      console.error(
+        `No script URL found for quest ${questData.id}, phase ${phase}, scriptIdx ${scriptIdx}`,
+        questData
+      )
       isLoading.value = false
       return
     }

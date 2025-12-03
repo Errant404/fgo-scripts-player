@@ -13,11 +13,17 @@ const debugMode = ref(true)
 
 const loadScript = async () => {
   const questId = Number(route.params.questId)
+  const phase = Number(route.params.phase)
+  const scriptIdx = Number(route.params.scriptIdx)
+
   if (questId) {
-    await store.fetchQuest(questId)
+    if (!store.currentQuest || store.currentQuest.id !== questId) {
+      await store.fetchQuest(questId)
+    }
+
     if (store.currentQuest) {
-      // Pass the whole quest object and region
-      player.loadScript(store.currentQuest, store.region)
+      // Pass the specific phase and script index
+      await player.loadScript(store.currentQuest, store.region, phase, scriptIdx)
     }
   }
 }
@@ -27,11 +33,66 @@ onMounted(() => {
 })
 
 watch(
-  () => route.params.questId,
+  () => [route.params.questId, route.params.phase, route.params.scriptIdx],
   () => {
     loadScript()
   },
 )
+
+// Watch for script finish to navigate to next
+watch(
+  () => player.state.value.isFinished,
+  (finished) => {
+    if (finished) {
+      handleScriptFinished()
+    }
+  }
+)
+
+const handleScriptFinished = () => {
+  if (!store.currentQuest) return
+
+  const currentPhase = Number(route.params.phase)
+  const currentScriptIdx = Number(route.params.scriptIdx)
+
+  // Check if there is a next script in the current phase
+  const phaseData = store.currentQuest.phaseScripts.find(p => p.phase === currentPhase)
+  if (phaseData && phaseData.scripts && currentScriptIdx + 1 < phaseData.scripts.length) {
+    // Go to next script in same phase
+    router.push({
+      name: 'player',
+      params: {
+        questId: store.currentQuest.id,
+        phase: currentPhase,
+        scriptIdx: currentScriptIdx + 1
+      }
+    })
+    return
+  }
+
+  // Check for next phase
+  // We need to find the next available phase number
+  const phases = store.currentQuest.phaseScripts.map(p => p.phase).sort((a, b) => a - b)
+  const nextPhaseIndex = phases.indexOf(currentPhase) + 1
+
+  if (nextPhaseIndex < phases.length) {
+    const nextPhase = phases[nextPhaseIndex]
+    // Go to first script of next phase
+    router.push({
+      name: 'player',
+      params: {
+        questId: store.currentQuest.id,
+        phase: nextPhase,
+        scriptIdx: 0
+      }
+    })
+    return
+  }
+
+  // No more scripts/phases
+  alert('Quest Completed!')
+  router.push({ name: 'home' })
+}
 
 const exit = () => {
   router.push({ name: 'home' })
@@ -76,10 +137,9 @@ const exit = () => {
 
         <div class="debug-overlay" v-if="debugMode">
           <button @click.stop="exit">Exit</button>
-          <details>
-            <summary>Quest Data (Debug)</summary>
-            <pre>{{ store.currentQuest }}</pre>
-          </details>
+          <div class="info">
+            Phase: {{ route.params.phase }} | Script: {{ route.params.scriptIdx }}
+          </div>
         </div>
       </div>
     </div>
@@ -123,12 +183,23 @@ const exit = () => {
   background-position: center;
 }
 
+.characters {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .ui-layer {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 10;
   pointer-events: none; /* Allow clicks to pass through to game-screen */
 }
 
@@ -164,15 +235,33 @@ const exit = () => {
   right: 10px;
   background: rgba(0, 0, 0, 0.5);
   padding: 10px;
-  max-width: 300px;
-  max-height: 80%;
-  overflow: auto;
   z-index: 1000;
 }
 
-pre {
-  font-size: 10px;
-  white-space: pre-wrap;
-  word-break: break-all;
+.info {
+  margin-top: 5px;
+  font-size: 0.8em;
+}
+
+button {
+  padding: 5px 10px;
+  background: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #357abd;
+}
+
+.loading,
+.error {
+  font-size: 1.5em;
+}
+
+.error {
+  color: #d32f2f;
 }
 </style>
