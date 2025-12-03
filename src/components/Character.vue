@@ -13,6 +13,7 @@ const props = defineProps<{
 const scriptData = ref<Script.SvtScript | null>(null)
 const imageSize = ref({ width: 1024, height: 1024 })
 const isLoading = ref(false)
+const composedImageUrl = ref<string | null>(null)
 
 const currentRegion = computed(() => (props.region as Region) || Region.JP)
 const assetUrl = computed(() =>
@@ -28,6 +29,7 @@ const fetchScript = async () => {
 
   // Reset state to prevent showing stale data (fixes "slight movement" glitch)
   scriptData.value = null
+  composedImageUrl.value = null
   isLoading.value = true
 
   try {
@@ -37,17 +39,20 @@ const fetchScript = async () => {
     const url = assetUrl.value
 
     // Load Image to get dimensions
-    const imagePromise = new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const img = new Image()
-      img.src = url
-      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-      img.onerror = (e) => reject(e)
-    })
+    const imagePromise = new Promise<{ width: number; height: number; image: HTMLImageElement }>(
+      (resolve, reject) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous' // Enable CORS for canvas
+        img.src = url
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight, image: img })
+        img.onerror = (e) => reject(e)
+      },
+    )
 
     // Fetch Script
     const scriptPromise = getSvtScript(currentId, currentRegion.value)
 
-    const [size, script] = await Promise.all([imagePromise, scriptPromise])
+    const [{ width, height, image }, script] = await Promise.all([imagePromise, scriptPromise])
 
     // Race condition check: If props changed while fetching, discard result
     if (props.charaGraphId !== currentId) {
@@ -56,8 +61,10 @@ const fetchScript = async () => {
     }
 
     if (script) {
-      imageSize.value = size
+      imageSize.value = { width, height }
       scriptData.value = script
+      // Compose the image with face
+      await composeCharacterImage(image, script, width, height)
     } else {
       console.warn('No script data found for character')
     }
@@ -68,6 +75,60 @@ const fetchScript = async () => {
       isLoading.value = false
     }
   }
+}
+
+// Compose body and face into a single canvas image
+const composeCharacterImage = async (
+  img: HTMLImageElement,
+  script: Script.SvtScript,
+  imgW: number,
+  imgH: number,
+) => {
+  const bodyHeight = 768
+  
+  // Canvas should only be as tall as the body part we're using
+  const canvas = document.createElement('canvas')
+  canvas.width = imgW
+  canvas.height = bodyHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Draw body (first 768 pixels height from source image)
+  ctx.drawImage(img, 0, 0, imgW, bodyHeight, 0, 0, imgW, bodyHeight)
+
+  // Calculate face position and draw it
+  const faceIndex = props.face - 1
+  const defaultFaceSize = 256
+  const faceStartHeight = 768
+
+  const faceSizeWidth =
+    script.extendData.faceSizeRect?.[0] ?? script.extendData.faceSize ?? defaultFaceSize
+  const faceSizeHeight =
+    script.extendData.faceSizeRect?.[1] ?? script.extendData.faceSize ?? defaultFaceSize
+
+  // Grid layout: 4 faces per row, starting at y=768 in source image
+  const perRow = 4
+  const col = faceIndex % perRow
+  const row = Math.floor(faceIndex / perRow)
+
+  const sourceFaceX = col * faceSizeWidth
+  const sourceFaceY = faceStartHeight + row * faceSizeHeight
+
+  // Draw face on top of body at the correct position (faceX, faceY are in original image coordinates)
+  ctx.drawImage(
+    img,
+    sourceFaceX,
+    sourceFaceY,
+    faceSizeWidth,
+    faceSizeHeight,
+    script.faceX,
+    script.faceY,
+    faceSizeWidth,
+    faceSizeHeight,
+  )
+
+  // Convert canvas to data URL
+  composedImageUrl.value = canvas.toDataURL('image/png')
 }
 
 onMounted(() => {
@@ -81,114 +142,58 @@ watch(
   },
 )
 
+watch(
+  () => props.face,
+  () => {
+    // Re-compose when face changes
+    if (scriptData.value && imageSize.value.width > 0) {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.src = assetUrl.value
+      img.onload = () => {
+        composeCharacterImage(img, scriptData.value!, imageSize.value.width, imageSize.value.height)
+      }
+    }
+  },
+)
+
 // Calculations based on Scene.tsx
 const containerWidth = 1024
 const containerHeight = 626
 const bodySourceHeight = 768
 
-const geometry = computed(() => {
-  if (!scriptData.value) return null
+const displayStyles = computed(() => {
+  if (!scriptData.value || !composedImageUrl.value) return null
+  
   const script = scriptData.value
   const imgW = imageSize.value.width
-  const imgH = imageSize.value.height
 
   // Scale to fit height (626 / 768)
   const scale = containerHeight / bodySourceHeight
   const renderedWidth = imgW * scale
+  const renderedHeight = containerHeight // Always 626px
 
   // Calculate Left: Centered in container, then shifted by offsetX
-  const bodyLeft = (containerWidth - renderedWidth) / 2 + script.offsetX * scale
-
-  // Calculate Bottom: Anchored to bottom, shifted by offsetY
-  // User reported "Top cropped, Bottom empty" with offsetY applied.
-  // Requirement: "Stick to bottom edge".
-  // We force the top of the image to align with the top of the container.
-  // Since we scaled the 768px height to fit the 626px container,
-  // aligning Top-to-Top implies Bottom-to-Bottom for the 768px area.
-  const bodyTop = 0
+  const left = (containerWidth - renderedWidth) / 2 + script.offsetX * scale
 
   return {
-    scale,
-    imgW,
-    imgH,
-    bodyLeft,
-    bodyTop,
-    renderedWidth,
-  }
-})
-
-const styles = computed(() => {
-  if (!geometry.value) return {}
-  const g = geometry.value
-
-  return {
-    body: {
-      backgroundImage: `url("${assetUrl.value}")`,
-      width: `${g.renderedWidth}px`,
-      height: `${containerHeight}px`, // Clip to container height
-      left: `${g.bodyLeft}px`,
-      top: `${g.bodyTop}px`,
-      backgroundSize: `${g.renderedWidth}px ${g.imgH * g.scale}px`, // Full image scaled
-      backgroundPosition: 'top left', // Show top part
-      backgroundRepeat: 'no-repeat',
-    },
-  }
-})
-
-const faceStyles = computed(() => {
-  if (!scriptData.value || !geometry.value) return {}
-  const script = scriptData.value
-  const g = geometry.value
-
-  // Face Logic
-  // face is 0-based index from props
-  const faceIndex = props.face - 1
-
-  const defaultFaceSize = 256
-  const faceStartHeight = 768
-
-  const faceSizeWidth =
-    script.extendData.faceSizeRect?.[0] ?? script.extendData.faceSize ?? defaultFaceSize
-  const faceSizeHeight =
-    script.extendData.faceSizeRect?.[1] ?? script.extendData.faceSize ?? defaultFaceSize
-
-  // Grid layout: 4 faces per row, starting at y=768
-  const perRow = 4
-  const col = faceIndex % perRow
-  const row = Math.floor(faceIndex / perRow)
-
-  const offsetX = col * faceSizeWidth
-  const offsetY = faceStartHeight + row * faceSizeHeight
-
-  const backgroundPositionX = -offsetX * g.scale
-  const backgroundPositionY = -offsetY * g.scale
-
-  // Position on screen
-  // Face is positioned relative to the body image
-  // bodyTop is 0 (forced), so we just use faceY scaled
-
-  const left = g.bodyLeft + script.faceX * g.scale
-  const top = g.bodyTop + script.faceY * g.scale
-
-  return {
-    backgroundImage: `url("${assetUrl.value}")`,
-    backgroundPosition: `${backgroundPositionX}px ${backgroundPositionY}px`,
-    backgroundSize: `${g.renderedWidth}px ${g.imgH * g.scale}px`,
-    width: `${faceSizeWidth * g.scale}px`,
-    height: `${faceSizeHeight * g.scale}px`,
+    width: `${renderedWidth}px`,
+    height: `${renderedHeight}px`,
     left: `${left}px`,
-    top: `${top}px`,
-    backgroundRepeat: 'no-repeat',
+    top: '0px',
   }
 })
 </script>
 
 <template>
-  <div class="character-container" v-if="scriptData">
-    <!-- Body -->
-    <div class="character-body" :style="styles.body"></div>
-    <!-- Face -->
-    <div class="character-face" :style="faceStyles"></div>
+  <div class="character-container" v-if="scriptData && composedImageUrl">
+    <!-- Composed character (body + face already merged) -->
+    <img 
+      class="character-composed" 
+      :src="composedImageUrl" 
+      :style="displayStyles"
+      alt="character"
+    />
   </div>
 </template>
 
@@ -202,12 +207,10 @@ const faceStyles = computed(() => {
   pointer-events: none;
 }
 
-.character-body {
+.character-composed {
   position: absolute;
-  /* background-size is set inline */
-}
-
-.character-face {
-  position: absolute;
+  object-fit: fill;
+  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast;
 }
 </style>
