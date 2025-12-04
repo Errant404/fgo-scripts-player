@@ -151,7 +151,7 @@ watch(
     if (scriptData.value && imageSize.value.width > 0) {
       const img = new Image()
       img.crossOrigin = 'anonymous'
-      img.src = assetUrl.value
+      img.src = resourceManager.getResolvedUrl(assetUrl.value)
       img.onload = () => {
         composeCharacterImage(img, scriptData.value!, imageSize.value.width, imageSize.value.height)
       }
