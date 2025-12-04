@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { getWars, getWar, getQuest, type RegionType, Region } from '@/api/atlas'
 import type { War as WarSchema, Quest as QuestSchema } from '@atlasacademy/api-connector'
@@ -15,14 +15,29 @@ export interface QuestWithScripts extends QuestSchema.Quest {
 }
 
 export const useFgoStore = defineStore('fgo', () => {
-  const region = ref<RegionType>(Region.JP)
+  const savedRegion = localStorage.getItem('fgo-region') as RegionType | null
+  const region = ref<RegionType>(savedRegion || Region.JP)
+
+  watch(region, (newRegion) => {
+    localStorage.setItem('fgo-region', newRegion)
+  })
+
   const wars = ref<WarSchema.WarBasic[]>([])
-  const currentWarId = ref<number | null>(null)
+  const savedWarId = localStorage.getItem('fgo-war-id')
+  const currentWarId = ref<number | null>(savedWarId ? Number(savedWarId) : null)
   const currentWar = ref<WarSchema.War | null>(null)
   const currentQuestId = ref<number | null>(null)
   const currentQuest = ref<QuestWithScripts | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+
+  watch(currentWarId, (newWarId) => {
+    if (newWarId) {
+      localStorage.setItem('fgo-war-id', newWarId.toString())
+    } else {
+      localStorage.removeItem('fgo-war-id')
+    }
+  })
 
   const fetchWars = async () => {
     isLoading.value = true
@@ -48,6 +63,12 @@ export const useFgoStore = defineStore('fgo', () => {
       isLoading.value = false
     }
   }
+
+  // Restore war if saved
+  if (currentWarId.value) {
+    fetchWar(currentWarId.value)
+  }
+
 
   const fetchQuest = async (questId: number) => {
     isLoading.value = true

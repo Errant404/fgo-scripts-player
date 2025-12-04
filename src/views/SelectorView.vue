@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useFgoStore } from '@/stores/fgo'
 import { Region, type RegionType } from '@/api/atlas'
 import { useRouter } from 'vue-router'
@@ -85,6 +85,7 @@ import type { Quest } from '@atlasacademy/api-connector'
 const store = useFgoStore()
 const router = useRouter()
 const selectedRegion = ref<RegionType>(store.region)
+
 const expandedQuests = ref<Set<number>>(new Set())
 
 onMounted(() => {
@@ -176,13 +177,13 @@ const getQuestsByType = (quests: Quest.Quest[]) => {
 
 const getQuestTypeLabel = (type: string): string => {
   const labels: Record<string, string> = {
-    'main': '主线关卡 (Main Story)',
-    'free': '自由关卡 (Free Quest)',
-    'friendship': '幕间物语 (Interlude)',
-    'event': '活动关卡 (Event)',
-    'heroballad': '英灵譚詩 (Hero Ballad)',
-    'warBoard': '战争棋盘 (War Board)',
-    'autoExecute': '自动执行 (Auto Execute)'
+    'main': 'Main Story',
+    'free': 'Free Quest',
+    'friendship': 'Interlude',
+    'event': 'Event',
+    'heroballad': 'Hero Ballad',
+    'warBoard': 'War Board',
+    'autoExecute': 'Auto Execute'
   }
 
   return labels[type] || type
@@ -212,22 +213,23 @@ const getQuestTypeLabel = (type: string): string => {
 .war-item {
   cursor: pointer;
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border);
   margin-bottom: 5px;
   border-radius: 4px;
   transition: background-color 0.2s;
+  background-color: var(--color-background);
 }
 
 .war-item:hover {
-  background-color: #f0f0f0;
+  background-color: var(--color-background-soft);
 }
 
 .quest-type-group {
   margin-bottom: 30px;
   padding: 15px;
-  background-color: #f9f9f9;
+  background-color: var(--color-background-soft);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
 }
 
 .quest-type-header {
@@ -235,23 +237,23 @@ const getQuestTypeLabel = (type: string): string => {
   font-size: 1.2em;
   margin-bottom: 15px;
   padding: 10px;
-  background-color: #fff;
+  background-color: var(--color-background);
   border-radius: 4px;
   border-left: 4px solid #4a90e2;
 }
 
 .quest-item {
   margin-bottom: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow: hidden;
-  background-color: #fff;
+  background-color: var(--color-background);
 }
 
 .quest-header {
   cursor: pointer;
   padding: 10px;
-  background-color: #f9f9f9;
+  background-color: var(--color-background-soft);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -259,7 +261,7 @@ const getQuestTypeLabel = (type: string): string => {
 }
 
 .quest-header:hover {
-  background-color: #f0f0f0;
+  background-color: var(--color-background-mute);
 }
 
 .quest-name {
@@ -268,7 +270,8 @@ const getQuestTypeLabel = (type: string): string => {
 }
 
 .quest-id {
-  color: #666;
+  color: var(--color-text);
+  opacity: 0.7;
   font-size: 0.9em;
   margin-left: 10px;
 }
@@ -281,8 +284,8 @@ const getQuestTypeLabel = (type: string): string => {
 
 .quest-details {
   padding: 10px;
-  background-color: #fff;
-  border-top: 1px solid #e0e0e0;
+  background-color: var(--color-background);
+  border-top: 1px solid var(--color-border);
 }
 
 .phase-group {
@@ -291,7 +294,8 @@ const getQuestTypeLabel = (type: string): string => {
 
 .phase-header {
   font-weight: bold;
-  color: #666;
+  color: var(--color-text);
+  opacity: 0.8;
   margin-bottom: 8px;
   font-size: 0.95em;
 }
@@ -305,9 +309,9 @@ const getQuestTypeLabel = (type: string): string => {
   cursor: pointer;
   padding: 8px 12px;
   margin-bottom: 5px;
-  background-color: #f5f5f5;
+  background-color: var(--color-background-mute);
   border-radius: 4px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   transition: all 0.2s;
   font-size: 0.9em;
 }
@@ -319,7 +323,8 @@ const getQuestTypeLabel = (type: string): string => {
 }
 
 .no-scripts {
-  color: #999;
+  color: var(--color-text);
+  opacity: 0.5;
   font-style: italic;
   padding: 10px;
 }
