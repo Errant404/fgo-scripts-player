@@ -18,5 +18,15 @@ export const getBgmUrl = (id: string, region: string = 'JP') => {
 }
 
 export const getSeUrl = (id: string, region: string = 'JP') => {
-  return getAssetUrl(`Audio/SE/${id}.mp3`, region)
+  let folder = 'SE'
+  if (id.startsWith('ba')) {
+    folder = 'Battle'
+  } else if (id.startsWith('ad')) {
+    folder = 'SE'
+  } else if (id.startsWith('ar')) {
+    folder = 'ResidentSE'
+  } else if (id.startsWith('21')) {
+    folder = 'SE_21'
+  }
+  return getAssetUrl(`Audio/${folder}/${id}.mp3`, region)
 }
