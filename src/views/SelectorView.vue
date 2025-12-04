@@ -1,5 +1,5 @@
 <template>
-  <div class="selector-container">
+  <div class="selector-container" ref="containerRef">
     <div class="header">
       <h1>FGO Story Player</h1>
       <div class="region-selector">
@@ -87,6 +87,13 @@ const router = useRouter()
 const selectedRegion = ref<RegionType>(store.region)
 
 const expandedQuests = ref<Set<number>>(new Set())
+const containerRef = ref<HTMLElement | null>(null)
+
+watch(() => store.currentWarId, () => {
+  if (containerRef.value) {
+    containerRef.value.scrollTop = 0
+  }
+})
 
 onMounted(() => {
   if (store.wars.length === 0) {

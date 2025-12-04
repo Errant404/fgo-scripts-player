@@ -695,11 +695,23 @@ export function useScriptPlayer() {
     }
   }
 
+  const stopAll = () => {
+    if (bgmAudio) {
+      bgmAudio.pause()
+      bgmAudio = null
+    }
+    seAudios.forEach(audio => {
+      audio.pause()
+    })
+    seAudios.clear()
+  }
+
   return {
     state,
     loadScript,
     next,
     selectChoice,
     isLoading,
+    stopAll,
   }
 }

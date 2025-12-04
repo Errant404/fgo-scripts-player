@@ -69,6 +69,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  player.stopAll()
   if (resizeObserver) {
     resizeObserver.disconnect()
   }
