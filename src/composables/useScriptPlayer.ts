@@ -200,7 +200,7 @@ export function useScriptPlayer() {
     // 4. Line: [line n] -> <hr> style
     processed = processed.replace(/\[line (\d+)\]/g, (match, len) => {
       const width = parseInt(len) * 15
-      return `<span style="display:inline-block; width: ${width}px; border-top: 1px solid white; vertical-align: middle; margin: 0 5px;"></span>`
+      return `<span style="display:inline-block; width: ${width}px; border-top: 1px solid currentColor; vertical-align: middle; margin: 0 5px;"></span>`
     })
 
     // 5. Font Size: [f size] -> <span style="font-size: ...">
