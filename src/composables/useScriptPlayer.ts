@@ -1,6 +1,6 @@
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import axios from 'axios'
-import { getAssetUrl, getBackgroundUrl } from '@/utils/asset'
+import { getAssetUrl, getBackgroundUrl, getBgmUrl, getSeUrl } from '@/utils/asset'
 
 export interface ScriptState {
   background: string | null
@@ -41,6 +41,117 @@ export function useScriptPlayer() {
 
   const isLoading = ref(false)
   const currentRegion = ref('JP')
+
+  // Audio State
+  let bgmAudio: HTMLAudioElement | null = null
+  const seAudios = new Map<string, HTMLAudioElement>()
+
+  // Audio Helper Functions
+  const fadeAudio = (audio: HTMLAudioElement, duration: number, targetVolume: number = 0) => {
+    if (duration <= 0) {
+      audio.volume = targetVolume
+      if (targetVolume === 0) {
+        audio.pause()
+      }
+      return
+    }
+
+    const startVolume = audio.volume
+    const startTime = performance.now()
+
+    const fade = (currentTime: number) => {
+      const elapsed = (currentTime - startTime) / 1000
+      if (elapsed >= duration) {
+        audio.volume = targetVolume
+        if (targetVolume === 0) {
+          audio.pause()
+        }
+        return
+      }
+
+      const ratio = elapsed / duration
+      audio.volume = startVolume + (targetVolume - startVolume) * ratio
+      requestAnimationFrame(fade)
+    }
+
+    requestAnimationFrame(fade)
+  }
+
+  const playBgm = (id: string, volume: number = 1.0, fadeDuration: number = 0) => {
+    const url = getBgmUrl(id, currentRegion.value)
+    // Boost volume because script values (e.g. 0.1) are often too quiet for web playback
+    const adjustedVolume = Math.min(volume * 5.0, 1.0)
+
+    if (bgmAudio && !bgmAudio.paused && bgmAudio.src === url) {
+      // Same BGM, just update volume
+      fadeAudio(bgmAudio, fadeDuration, adjustedVolume)
+      return
+    }
+
+    if (bgmAudio) {
+      // Stop previous BGM
+      const oldAudio = bgmAudio
+      fadeAudio(oldAudio, fadeDuration, 0)
+    }
+
+    bgmAudio = new Audio(url)
+    bgmAudio.loop = true
+    bgmAudio.volume = 0 // Start at 0 if fading in
+    bgmAudio.play().catch(e => console.error("Failed to play BGM", e))
+
+    if (fadeDuration > 0) {
+      fadeAudio(bgmAudio, fadeDuration, adjustedVolume)
+    } else {
+      bgmAudio.volume = adjustedVolume
+    }
+
+    state.value.bgm = id
+  }
+
+  const stopBgm = (id?: string, fadeDuration: number = 0) => {
+    if (bgmAudio) {
+      // If id is provided, check if it matches
+      if (id && !bgmAudio.src.includes(id)) {
+        return
+      }
+      fadeAudio(bgmAudio, fadeDuration, 0)
+      state.value.bgm = null
+    }
+  }
+
+  const playSe = (id: string) => {
+    const url = getSeUrl(id, currentRegion.value)
+    const audio = new Audio(url)
+    audio.volume = 1.0 // Default volume for SE
+
+    audio.onended = () => {
+      seAudios.delete(id)
+    }
+
+    audio.play().catch(e => console.error("Failed to play SE", e))
+    seAudios.set(id, audio)
+  }
+
+  const stopSe = (id: string, fadeDuration: number = 0) => {
+    const audio = seAudios.get(id)
+    if (audio) {
+      fadeAudio(audio, fadeDuration, 0)
+      setTimeout(() => {
+        seAudios.delete(id)
+      }, fadeDuration * 1000 + 100)
+    }
+  }
+
+  const stopAllSound = (fadeDuration: number = 0) => {
+    stopBgm(undefined, fadeDuration)
+    seAudios.forEach((audio, id) => {
+      stopSe(id, fadeDuration)
+    })
+  }
+
+  onUnmounted(() => {
+    stopAllSound(0)
+  })
 
   // TODO: Full Script Parser Implementation Needed
   // The current implementation is a very basic regex-based parser that only handles linear dialogue
@@ -233,10 +344,45 @@ export function useScriptPlayer() {
             break
           case 'bgm':
             // [bgm name vol]
-            // TODO: Implement actual AudioContext or HTMLAudioElement handling
             if (cmd.args && cmd.args.length > 0) {
               const bgmId = cmd.args[0] as string
-              state.value.bgm = bgmId
+              const vol = cmd.args.length > 1 ? parseFloat(cmd.args[1] as string) : 1.0
+              playBgm(bgmId, vol)
+            }
+            break
+          case 'bgmStop':
+            // [bgmStop name fade]
+            if (cmd.args && cmd.args.length > 0) {
+              const bgmId = cmd.args[0] as string
+              const fade = cmd.args.length > 1 ? parseFloat(cmd.args[1] as string) : 0
+              stopBgm(bgmId, fade)
+            }
+            break
+          case 'se':
+            // [se id]
+            if (cmd.args && cmd.args.length > 0) {
+              const seId = cmd.args[0] as string
+              playSe(seId)
+            }
+            break
+          case 'seStop':
+            // [seStop id fade]
+            if (cmd.args && cmd.args.length > 0) {
+              const seId = cmd.args[0] as string
+              const fade = cmd.args.length > 1 ? parseFloat(cmd.args[1] as string) : 0
+              stopSe(seId, fade)
+            }
+            break
+          case 'soundStopAll':
+            stopAllSound(0)
+            break
+          case 'soundStopAllFade':
+            // [soundStopAllFade fade]
+            if (cmd.args && cmd.args.length > 0) {
+              const fade = parseFloat(cmd.args[0] as string)
+              stopAllSound(fade)
+            } else {
+              stopAllSound(0)
             }
             break
           case 'charaSet':
