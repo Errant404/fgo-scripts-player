@@ -195,6 +195,9 @@ const getQuestTypeLabel = (type: string): string => {
   padding: 20px;
   max-width: 1000px;
   margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .header {

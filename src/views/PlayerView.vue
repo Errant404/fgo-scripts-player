@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, watch, ref } from 'vue'
+import { onMounted, onUnmounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFgoStore } from '@/stores/fgo'
 import { useScriptPlayer } from '@/composables/useScriptPlayer'
@@ -11,6 +11,27 @@ const store = useFgoStore()
 const player = useScriptPlayer()
 const debugMode = ref(true)
 const showSettings = ref(false)
+
+const containerRef = ref<HTMLElement | null>(null)
+const gameScreenScale = ref(1)
+
+const updateScale = () => {
+  if (!containerRef.value) return
+  const parentW = containerRef.value.clientWidth
+  const parentH = containerRef.value.clientHeight
+
+  // If dimensions are 0 (e.g. hidden), skip
+  if (parentW === 0 || parentH === 0) return
+
+  const targetW = 1024
+  const targetH = 626
+
+  const scaleW = parentW / targetW
+  const scaleH = parentH / targetH
+
+  // Fit inside (contain)
+  gameScreenScale.value = Math.min(scaleW, scaleH)
+}
 
 const loadScript = async () => {
   const questId = Number(route.params.questId)
@@ -29,8 +50,29 @@ const loadScript = async () => {
   }
 }
 
+let resizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   loadScript()
+
+  // Use ResizeObserver to detect container size changes
+  if (containerRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      updateScale()
+    })
+    resizeObserver.observe(containerRef.value)
+  }
+
+  window.addEventListener('resize', updateScale)
+  // Initial scale update
+  setTimeout(updateScale, 100)
+})
+
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+  }
+  window.removeEventListener('resize', updateScale)
 })
 
 watch(
@@ -101,10 +143,15 @@ const exit = () => {
 </script>
 
 <template>
-  <div class="player-container">
+  <div class="player-container" ref="containerRef">
     <div v-if="store.isLoading" class="loading">Loading Script...</div>
     <div v-else-if="store.error" class="error">{{ store.error }}</div>
-    <div v-else-if="store.currentQuest" class="game-screen" @click="player.next()">
+    <div
+      v-else-if="store.currentQuest"
+      class="game-screen"
+      @click="player.next()"
+      :style="{ transform: `scale(${gameScreenScale})` }"
+    >
       <!-- Background Layer -->
       <div
         class="background"
@@ -175,33 +222,32 @@ const exit = () => {
 
 <style scoped>
 .player-container {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   z-index: 1000;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background: #000;
   color: white;
   display: flex;
   justify-content: center;
   align-items: center;
+  overflow: hidden;
 }
 
 .game-screen {
   position: relative;
-  width: 100%;
-  height: 100%;
-  max-width: 1024px;
-  max-height: 626px;
+  width: 1024px;
+  height: 626px;
   background: #333;
   overflow: hidden;
   cursor: pointer;
-  aspect-ratio: 1024 / 626;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  flex-shrink: 0;
 }
 
 .background {
