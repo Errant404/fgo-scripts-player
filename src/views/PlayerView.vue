@@ -10,6 +10,7 @@ const router = useRouter()
 const store = useFgoStore()
 const player = useScriptPlayer()
 const debugMode = ref(true)
+const showSettings = ref(false)
 
 const loadScript = async () => {
   const questId = Number(route.params.questId)
@@ -128,18 +129,44 @@ const exit = () => {
 
       <!-- UI Layer -->
       <div class="ui-layer">
-        <div class="dialog-box" v-if="player.state.value.text">
-          <div class="speaker" v-if="player.state.value.speaker">
-            {{ player.state.value.speaker }}
-          </div>
-          <div class="text">{{ player.state.value.text }}</div>
+        <div class="choices-container" v-if="player.state.value.choices.length > 0">
+          <div
+            v-for="choice in player.state.value.choices"
+            :key="choice.id"
+            class="choice-btn"
+            @click.stop="player.selectChoice(choice.id)"
+            v-html="choice.text"
+          ></div>
+        </div>
+
+        <div class="dialog-box" v-if="player.state.value.text && player.state.value.choices.length === 0">
+          <div class="speaker" v-if="player.state.value.speaker" v-html="player.state.value.speaker"></div>
+          <div class="text" v-html="player.state.value.text"></div>
         </div>
 
         <div class="debug-overlay" v-if="debugMode">
+          <button @click.stop="showSettings = true">Settings</button>
           <button @click.stop="exit">Exit</button>
           <div class="info">
             Phase: {{ route.params.phase }} | Script: {{ route.params.scriptIdx }}
           </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="settings-modal" v-if="showSettings" @click.stop>
+          <h3>Settings</h3>
+          <div class="setting-item">
+            <label>Player Name:</label>
+            <input v-model="player.state.value.playerName" />
+          </div>
+          <div class="setting-item">
+            <label>Gender:</label>
+            <select v-model="player.state.value.playerGender">
+              <option value="m">Male</option>
+              <option value="f">Female</option>
+            </select>
+          </div>
+          <button @click="showSettings = false">Close</button>
         </div>
       </div>
     </div>
@@ -250,6 +277,32 @@ const exit = () => {
   font-size: 0.8em;
 }
 
+.settings-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.9);
+  padding: 20px;
+  border: 1px solid #fff;
+  border-radius: 8px;
+  z-index: 2000;
+  min-width: 300px;
+}
+
+.setting-item {
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.setting-item input,
+.setting-item select {
+  padding: 5px;
+  font-size: 1em;
+}
+
 button {
   padding: 5px 10px;
   background: #4a90e2;
@@ -257,6 +310,7 @@ button {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  margin-right: 5px;
 }
 
 button:hover {
@@ -270,5 +324,45 @@ button:hover {
 
 .error {
   color: #d32f2f;
+}
+
+.choices-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 80%;
+  max-width: 600px;
+  z-index: 20;
+}
+
+.choice-btn {
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #fff;
+  padding: 15px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 1.2em;
+  transition: background 0.2s;
+}
+
+.choice-btn:hover {
+  background: rgba(50, 50, 50, 0.9);
+}
+
+:deep(.emphasis) {
+  text-emphasis: dot;
+  -webkit-text-emphasis: dot;
+  text-emphasis-position: under;
+  -webkit-text-emphasis-position: under;
+  text-emphasis-color: white;
+  -webkit-text-emphasis-color: white;
+}
+
+:deep(ruby) {
+  ruby-position: over;
 }
 </style>

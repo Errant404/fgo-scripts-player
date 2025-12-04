@@ -13,21 +13,27 @@ export interface ScriptState {
   text: string
   speaker: string
   isFinished: boolean
+  choices: { id: number; text: string }[]
+  playerName: string
+  playerGender: 'm' | 'f'
 }
 
 interface ScriptCommand {
-  type: 'command' | 'dialogue'
+  type: 'command' | 'dialogue' | 'choice' | 'choiceEnd'
   raw: string
   // Parsed properties
   speaker?: string
   text?: string
   commandName?: string
   args?: string[]
+  choiceId?: number
 }
 
 export function useScriptPlayer() {
   const scriptLines = ref<string[]>([])
   const currentLineIndex = ref(0)
+  const jumpOnNextChoiceMarker = ref<number | null>(null)
+  const choiceMap = ref<Record<number, number>>({})
 
   const state = ref<ScriptState>({
     background: null,
@@ -37,6 +43,9 @@ export function useScriptPlayer() {
     text: '',
     speaker: '',
     isFinished: false,
+    choices: [],
+    playerName: '藤丸立香',
+    playerGender: 'm',
   })
 
   const isLoading = ref(false)
@@ -170,18 +179,93 @@ export function useScriptPlayer() {
   // the current parser cannot handle.
 
   // Simple parser for color codes and formatting: [color]...[-] or [line n]
-  const cleanText = (text: string) => {
-    // Remove color tags like [51d4ff] and [-]
-    let cleaned = text.replace(/\[[0-9a-fA-F]{6}\]/g, '').replace(/\[-\]/g, '')
-    // Remove [line n]
-    cleaned = cleaned.replace(/\[line \d+\]/g, '')
+  const processText = (text: string) => {
+    // 1. Gender Ternary: [&Male:Female]
+    // We must handle this first because it might contain other tags
+    // Note: This regex handles simple cases. Nested brackets might fail.
+    // The DB parser splits by : looking ahead for closing bracket.
+    // Here we assume [&M:F] format.
+    let processed = text.replace(/\[&([^:\]]+):([^\]]+)\]/g, (match, male, female) => {
+      return state.value.playerGender === 'm' ? male : female
+    })
+
+    // 2. Color Tags: [hex] -> <span style="color: #hex">
+    processed = processed.replace(/\[([0-9a-fA-F]{6})\]/g, '<span style="color: #$1">')
+
+    // 3. Reset Tag: [-] -> </span>
+    // This is a simplification. Ideally we should track stack.
+    // But replacing all [-] with </span> usually works if tags are well-nested.
+    processed = processed.replace(/\[-\]/g, '</span>')
+
+    // 4. Line: [line n] -> <hr> style
+    processed = processed.replace(/\[line (\d+)\]/g, (match, len) => {
+      const width = parseInt(len) * 15
+      return `<span style="display:inline-block; width: ${width}px; border-top: 1px solid white; vertical-align: middle; margin: 0 5px;"></span>`
+    })
+
+    // 5. Font Size: [f size] -> <span style="font-size: ...">
+    // DB maps: small -> 0.75em, medium -> 1em, large -> 1.5em, x-large -> 2em
+    // Also handles numeric?
+    processed = processed.replace(/\[f ([^\]]+)\]/g, (match, size) => {
+      let cssSize = '1em'
+      if (size === 'small') cssSize = '0.75em'
+      else if (size === 'medium') cssSize = '1em'
+      else if (size === 'large') cssSize = '1.5em'
+      else if (size === 'x-large') cssSize = '2em'
+      else if (!isNaN(parseFloat(size))) cssSize = `${size}em` // Assuming numeric is em? Or just pass it?
+
+      return `<span style="font-size: ${cssSize}">`
+    })
+
+    // 6. Hidden Name: [servantName id:hidden:true] -> trueName
+    processed = processed.replace(/\[servantName \d+:([^:\]]+):([^\]]+)\]/g, '$2')
+
+    // 7. Image: [image name:ruby] -> ruby (fallback)
+    // Ideally we render image, but we need asset host.
+    // Let's try to render image if we can.
+    // Format: [image name:ruby] or [i name:ruby]
+    // We need to import AssetHost? It is in atlas.ts but not imported here.
+    // For now, let's just render the ruby text to avoid broken images.
+    processed = processed.replace(/\[(?:image|i) [^:]+:([^\]]+)\]/g, '$1')
+
     // Replace [r] with newline or space
-    cleaned = cleaned.replace(/\[r\]/g, '\n')
-    return cleaned
+    processed = processed.replace(/\[r\]/g, '<br>')
+
+    // Replace Player Name
+    processed = processed.replace(/\[%1\]/g, state.value.playerName)
+
+    // Replace Ruby: [#Base:Ruby] -> <ruby>Base<rt>Ruby</rt></ruby>
+    processed = processed.replace(/\[#([^:\]]+):([^\]]+)\]/g, '<ruby>$1<rt>$2</rt></ruby>')
+
+    // Replace Emphasis: [#Text] -> <span class="emphasis">Text</span>
+    processed = processed.replace(/\[#([^:\]]+)\]/g, '<span class="emphasis">$1</span>')
+
+    return processed
   }
 
   const parseLine = (line: string): ScriptCommand => {
     line = line.trim()
+
+    if (line.startsWith('＄')) {
+      return { type: 'command', commandName: 'noop', raw: line }
+    }
+
+    if (line.startsWith('？')) {
+      if (line === '？！') {
+        return { type: 'choiceEnd', raw: line }
+      }
+      // Choice: ？1：Text
+      const match = line.match(/^？(\d+)：(.*)$/)
+      if (match && match[1] && match[2]) {
+        return {
+          type: 'choice',
+          choiceId: parseInt(match[1]),
+          text: processText(match[2]),
+          raw: line
+        }
+      }
+    }
+
     if (line.startsWith('＠')) {
       // Speaker line
       // Example: ＠[51d4ff]广播语音[-]
@@ -189,7 +273,7 @@ export function useScriptPlayer() {
       return {
         type: 'command', // Temporarily treat as command-like processing or just metadata
         raw: line,
-        speaker: cleanText(content),
+        speaker: processText(content),
         commandName: 'speaker',
       }
     } else if (line.startsWith('[')) {
@@ -217,7 +301,7 @@ export function useScriptPlayer() {
           // It's likely a color code start of a text line
           return {
             type: 'dialogue',
-            text: cleanText(line),
+            text: processText(line),
             raw: line,
           }
         }
@@ -233,14 +317,14 @@ export function useScriptPlayer() {
       // If regex doesn't match cleanly (maybe multiple brackets), treat as text
       return {
         type: 'dialogue',
-        text: cleanText(line),
+        text: processText(line),
         raw: line,
       }
     } else {
       // Plain text
       return {
         type: 'dialogue',
-        text: cleanText(line),
+        text: processText(line),
         raw: line,
       }
     }
@@ -265,6 +349,22 @@ export function useScriptPlayer() {
     isLoading.value = true
     state.value.isFinished = false
     currentRegion.value = region
+
+    // Set default player name based on region
+    switch (region) {
+      case 'NA':
+        state.value.playerName = 'Fujimaru'
+        break
+      case 'KR':
+        state.value.playerName = '후지마루'
+        break
+      case 'CN':
+      case 'TW':
+      case 'JP':
+      default:
+        state.value.playerName = '藤丸' // DB uses just '藤丸' for JP/CN/TW
+        break
+    }
 
     // Find script URLs based on phase and scriptIdx
     let scriptUrl = ''
@@ -312,8 +412,102 @@ export function useScriptPlayer() {
 
       currentLineIndex.value++
 
-      if (cmd.type === 'command') {
+      if (cmd.type === 'choice') {
+        if (jumpOnNextChoiceMarker.value !== null) {
+          // We are currently playing a selected choice branch and hit the next branch
+          // Jump to end
+          currentLineIndex.value = jumpOnNextChoiceMarker.value
+          jumpOnNextChoiceMarker.value = null
+          // Continue loop to process what's after ？！
+          continue
+        }
+
+        // Start of a new choice block
+        // Scan ahead to find all choices and the end of the block
+        const choices: { id: number; text: string; startIndex: number }[] = []
+        let blockEndIndex = -1
+
+        // Add current choice
+        if (cmd.choiceId !== undefined && cmd.text) {
+          choices.push({
+            id: cmd.choiceId,
+            text: cmd.text,
+            startIndex: currentLineIndex.value // Content starts at next line
+          })
+        }
+
+        // Scan forward
+        let tempIndex = currentLineIndex.value
+        while (tempIndex < scriptLines.value.length) {
+          const line = scriptLines.value[tempIndex]
+          if (!line) {
+            tempIndex++
+            continue
+          }
+          const scanCmd = parseLine(line)
+
+          if (scanCmd.type === 'choice') {
+            if (scanCmd.choiceId !== undefined && scanCmd.text) {
+              choices.push({
+                id: scanCmd.choiceId,
+                text: scanCmd.text,
+                startIndex: tempIndex + 1
+              })
+            }
+          } else if (scanCmd.type === 'choiceEnd') {
+            blockEndIndex = tempIndex + 1 // Resume after ？！
+            break
+          }
+          tempIndex++
+        }
+
+        if (blockEndIndex !== -1 && choices.length > 0) {
+          state.value.choices = choices.map(c => ({ id: c.id, text: c.text }))
+
+          // Store mapping
+          choiceMap.value = choices.reduce((acc, c) => {
+            acc[c.id] = c.startIndex
+            return acc
+          }, {} as Record<number, number>)
+
+          // Set jump marker for when we finish a branch
+          // Actually, we set the jump marker when the user SELECTS a choice.
+          // But we need to know where to jump TO.
+          // We can store the blockEndIndex in the choiceMap or a separate ref?
+          // Let's store it in the choiceMap or just use a separate ref for "currentBlockEnd"
+          // But wait, selectChoice needs to know it.
+          // Let's store it in a special key in choiceMap or just a separate ref.
+          // Hack: Store it as choice ID -1? No.
+          // Let's add a property to the composable scope.
+          jumpOnNextChoiceMarker.value = blockEndIndex // Wait, this is "where to jump IF we hit a choice marker"
+          // But right now we are PAUSING.
+          // We need to store "where the block ends" so selectChoice can use it.
+          // Actually, we can just store it in jumpOnNextChoiceMarker NOW?
+          // No, jumpOnNextChoiceMarker is used inside the loop to detect "I hit a choice, I should jump".
+          // If we set it now, and then stop, it's fine.
+          // But selectChoice needs to set it again?
+          // No.
+          // When we select a choice, we set currentLineIndex = startIndex.
+          // And we want jumpOnNextChoiceMarker to be blockEndIndex.
+          // So we can just leave it set here!
+          // But wait, if we set it here, and then stop.
+          // User clicks choice. selectChoice sets currentLineIndex.
+          // processNextBlock runs.
+          // It hits lines.
+          // If it hits a choice line, it checks jumpOnNextChoiceMarker. It is set. It jumps.
+          // This works!
+
+          stop = true
+        }
+      } else if (cmd.type === 'choiceEnd') {
+        // If we hit this naturally (e.g. last choice branch finished), clear marker
+        if (jumpOnNextChoiceMarker.value !== null) {
+          jumpOnNextChoiceMarker.value = null
+        }
+      } else if (cmd.type === 'command') {
         switch (cmd.commandName) {
+          case 'noop':
+            break
           case 'speaker':
             state.value.speaker = cmd.speaker || ''
             // Auto-switch active character based on speaker name
@@ -481,6 +675,7 @@ export function useScriptPlayer() {
     // Clear text for next block?
     // Usually after [k], the text box clears for the next dialogue.
     state.value.text = ''
+    state.value.choices = []
     // Keep speaker? Usually speaker persists unless changed, but typically it is set again if needed.
     // But let's keep it for now.
 
@@ -490,10 +685,21 @@ export function useScriptPlayer() {
     processNextBlock()
   }
 
+  const selectChoice = (choiceId: number) => {
+    const startIndex = choiceMap.value[choiceId]
+    if (startIndex !== undefined) {
+      currentLineIndex.value = startIndex
+      state.value.choices = []
+      state.value.text = '' // Clear text before showing response
+      processNextBlock()
+    }
+  }
+
   return {
     state,
     loadScript,
     next,
+    selectChoice,
     isLoading,
   }
 }
