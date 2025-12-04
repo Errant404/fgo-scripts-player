@@ -81,7 +81,8 @@ export function useScriptPlayer() {
       }
 
       const ratio = elapsed / duration
-      audio.volume = startVolume + (targetVolume - startVolume) * ratio
+      const newVolume = startVolume + (targetVolume - startVolume) * ratio
+      audio.volume = Math.max(0, Math.min(1, newVolume))
       requestAnimationFrame(fade)
     }
 
@@ -92,7 +93,7 @@ export function useScriptPlayer() {
     const rawUrl = getBgmUrl(id, currentRegion.value)
     const url = resourceManager.getResolvedUrl(rawUrl)
     // Boost volume because script values (e.g. 0.1) are often too quiet for web playback
-    const adjustedVolume = Math.min(volume * 5.0, 1.0)
+    const adjustedVolume = Math.max(0, Math.min(volume * 5.0, 1.0))
 
     if (bgmAudio && !bgmAudio.paused && (bgmAudio.src === url || bgmAudio.src === rawUrl)) {
       // Same BGM, just update volume
@@ -338,7 +339,7 @@ export function useScriptPlayer() {
     let blocksFound = 0
     let index = startIndex
     let isPreloading = true
-    let hasEncounteredChoice = false
+    let inChoiceBlock = false
 
     while (index < scriptLines.value.length) {
       const line = scriptLines.value[index]
@@ -349,13 +350,12 @@ export function useScriptPlayer() {
       const cmd = parseLine(line)
 
       if (cmd.type === 'choice') {
-        hasEncounteredChoice = true
+        inChoiceBlock = true
         // Reset for new branch so we scan into it
         blocksFound = 0
         isPreloading = true
       } else if (cmd.type === 'choiceEnd') {
-        // End of choice block, stop scanning
-        break
+        inChoiceBlock = false
       }
 
       if (isPreloading) {
@@ -403,12 +403,12 @@ export function useScriptPlayer() {
 
         if (blocksFound >= limitBlocks) {
           isPreloading = false
-          // If we haven't seen a choice, we can stop now.
-          // Because we are just in linear text and reached the limit.
-          if (!hasEncounteredChoice) {
-            break
-          }
         }
+      }
+
+      // If we are not preloading and not inside a choice block (waiting for other options), we can stop.
+      if (!isPreloading && !inChoiceBlock) {
+        break
       }
 
       index++

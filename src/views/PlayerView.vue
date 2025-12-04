@@ -412,4 +412,8 @@ button:hover {
 :deep(ruby) {
   ruby-position: over;
 }
+
+:deep(rt) {
+  font-size: 0.7em;
+}
 </style>

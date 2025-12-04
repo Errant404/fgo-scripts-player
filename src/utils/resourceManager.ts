@@ -14,7 +14,7 @@ class ResourceManager {
 
   private currentSize: number = 0
   // Limit to 50MB (approx)
-  private readonly MAX_SIZE: number = 50 * 1024 * 1024
+  private readonly MAX_SIZE: number = 100 * 1024 * 1024
 
   async preload(url: string): Promise<void> {
     if (this.cache.has(url)) {
