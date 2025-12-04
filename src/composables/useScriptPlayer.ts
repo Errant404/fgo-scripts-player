@@ -1,6 +1,8 @@
 import { ref, onUnmounted } from 'vue'
 import axios from 'axios'
 import { getAssetUrl, getBackgroundUrl, getBgmUrl, getSeUrl } from '@/utils/asset'
+import { resourceManager } from '@/utils/resourceManager'
+import { getSvtScript, Region } from '@/api/atlas'
 
 export interface ScriptState {
   background: string | null
@@ -87,11 +89,12 @@ export function useScriptPlayer() {
   }
 
   const playBgm = (id: string, volume: number = 1.0, fadeDuration: number = 0) => {
-    const url = getBgmUrl(id, currentRegion.value)
+    const rawUrl = getBgmUrl(id, currentRegion.value)
+    const url = resourceManager.getResolvedUrl(rawUrl)
     // Boost volume because script values (e.g. 0.1) are often too quiet for web playback
     const adjustedVolume = Math.min(volume * 5.0, 1.0)
 
-    if (bgmAudio && !bgmAudio.paused && bgmAudio.src === url) {
+    if (bgmAudio && !bgmAudio.paused && (bgmAudio.src === url || bgmAudio.src === rawUrl)) {
       // Same BGM, just update volume
       fadeAudio(bgmAudio, fadeDuration, adjustedVolume)
       return
@@ -129,7 +132,8 @@ export function useScriptPlayer() {
   }
 
   const playSe = (id: string) => {
-    const url = getSeUrl(id, currentRegion.value)
+    const rawUrl = getSeUrl(id, currentRegion.value)
+    const url = resourceManager.getResolvedUrl(rawUrl)
     const audio = new Audio(url)
     audio.volume = 1.0 // Default volume for SE
 
@@ -330,6 +334,87 @@ export function useScriptPlayer() {
     }
   }
 
+  const preloadUpcomingAssets = (startIndex: number, region: string, limitBlocks: number = 3) => {
+    let blocksFound = 0
+    let index = startIndex
+    let isPreloading = true
+    let hasEncounteredChoice = false
+
+    while (index < scriptLines.value.length) {
+      const line = scriptLines.value[index]
+      if (!line) {
+        index++
+        continue
+      }
+      const cmd = parseLine(line)
+
+      if (cmd.type === 'choice') {
+        hasEncounteredChoice = true
+        // Reset for new branch so we scan into it
+        blocksFound = 0
+        isPreloading = true
+      } else if (cmd.type === 'choiceEnd') {
+        // End of choice block, stop scanning
+        break
+      }
+
+      if (isPreloading) {
+        if (cmd.type === 'command') {
+          switch (cmd.commandName) {
+            case 'bgm':
+              if (cmd.args && cmd.args.length > 0) {
+                const url = getBgmUrl(cmd.args[0]!, region)
+                resourceManager.preloadAudio(url)
+              }
+              break
+            case 'se':
+              if (cmd.args && cmd.args.length > 0) {
+                const url = getSeUrl(cmd.args[0]!, region)
+                resourceManager.preloadAudio(url)
+              }
+              break
+            case 'scene':
+              if (cmd.args && cmd.args.length > 0) {
+                const url = getBackgroundUrl(cmd.args[0]!, region)
+                resourceManager.preloadImage(url)
+              }
+              break
+            case 'charaSet':
+              // [charaSet CODE ID ASCENSION NAME...]
+              if (cmd.args && cmd.args.length >= 3) {
+                const id = cmd.args[1]!
+                const url = getAssetUrl(`CharaFigure/${id}/${id}_merged.png`, region)
+                resourceManager.preloadImage(url)
+
+                // Preload svtScript data
+                getSvtScript(parseInt(id), region as Region)
+              }
+              break
+            case 'waitClick':
+              blocksFound++
+              break
+            case 'end':
+              blocksFound = limitBlocks // Stop scanning
+              break
+          }
+        } else if (cmd.type === 'choice') {
+          // Handled above
+        }
+
+        if (blocksFound >= limitBlocks) {
+          isPreloading = false
+          // If we haven't seen a choice, we can stop now.
+          // Because we are just in linear text and reached the limit.
+          if (!hasEncounteredChoice) {
+            break
+          }
+        }
+      }
+
+      index++
+    }
+  }
+
   const fetchScriptContent = async (url: string) => {
     try {
       const response = await axios.get(url)
@@ -393,7 +478,11 @@ export function useScriptPlayer() {
 
     const content = await fetchScriptContent(scriptUrl)
     scriptLines.value = content.split('\n').filter((l: string) => l.trim() !== '')
+
     currentLineIndex.value = 0
+
+    // Preload initial batch (next 3 blocks)
+    preloadUpcomingAssets(0, region, 3)
 
     // Start processing until first stop
     await processNextBlock()
@@ -533,7 +622,8 @@ export function useScriptPlayer() {
             // TODO: Handle transitions and visual effects for scene changes
             if (cmd.args && cmd.args.length > 0) {
               const bgId = cmd.args[0] as string
-              state.value.background = getBackgroundUrl(bgId, currentRegion.value)
+              const rawUrl = getBackgroundUrl(bgId, currentRegion.value)
+              state.value.background = resourceManager.getResolvedUrl(rawUrl)
             }
             break
           case 'bgm':
@@ -669,7 +759,7 @@ export function useScriptPlayer() {
     }
   }
 
-  const next = () => {
+  const next = async () => {
     if (state.value.isFinished) return
 
     // Clear text for next block?
@@ -682,16 +772,22 @@ export function useScriptPlayer() {
     // We need to pass region again. Ideally store it in closure or ref.
     // For now, let's just default to JP or we need to refactor to store region in state.
     // Refactor: store region
-    processNextBlock()
+    await processNextBlock()
+
+    // Preload next batch
+    preloadUpcomingAssets(currentLineIndex.value, currentRegion.value, 3)
   }
 
-  const selectChoice = (choiceId: number) => {
+  const selectChoice = async (choiceId: number) => {
     const startIndex = choiceMap.value[choiceId]
     if (startIndex !== undefined) {
       currentLineIndex.value = startIndex
       state.value.choices = []
       state.value.text = '' // Clear text before showing response
-      processNextBlock()
+      await processNextBlock()
+
+      // Preload next batch
+      preloadUpcomingAssets(currentLineIndex.value, currentRegion.value, 3)
     }
   }
 

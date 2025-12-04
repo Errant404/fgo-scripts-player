@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { getSvtScript, Region } from '@/api/atlas'
 import { getAssetUrl } from '@/utils/asset'
+import { resourceManager } from '@/utils/resourceManager'
 import type { Script } from '@atlasacademy/api-connector'
 
 const props = defineProps<{
@@ -36,7 +37,8 @@ const fetchScript = async () => {
     console.log(`Fetching data for charaId: ${currentId}`)
 
     // Capture the URL at the start to ensure consistency
-    const url = assetUrl.value
+    const rawUrl = assetUrl.value
+    const url = resourceManager.getResolvedUrl(rawUrl)
 
     // Load Image to get dimensions
     const imagePromise = new Promise<{ width: number; height: number; image: HTMLImageElement }>(
