@@ -27,6 +27,7 @@ export const useFgoStore = defineStore('fgo', () => {
   const currentWarId = ref<number | null>(savedWarId ? Number(savedWarId) : null)
   const currentWar = ref<WarSchema.War | null>(null)
   const currentQuestId = ref<number | null>(null)
+  const expandedQuestId = ref<number | null>(null)
   const currentQuest = ref<QuestWithScripts | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -37,6 +38,8 @@ export const useFgoStore = defineStore('fgo', () => {
     } else {
       localStorage.removeItem('fgo-war-id')
     }
+    // Reset expanded quest when war changes
+    expandedQuestId.value = null
   })
 
   const fetchWars = async () => {
@@ -100,6 +103,7 @@ export const useFgoStore = defineStore('fgo', () => {
     currentWarId,
     currentWar,
     currentQuestId,
+    expandedQuestId,
     currentQuest,
     isLoading,
     error,

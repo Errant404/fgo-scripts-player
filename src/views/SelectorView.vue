@@ -42,11 +42,11 @@
                 <div class="quest-header" @click="toggleQuest(quest.id)">
                   <span class="quest-name">{{ quest.name }}</span>
                   <span class="quest-id">(ID: {{ quest.id }})</span>
-                  <span class="expand-icon">{{ expandedQuests.has(quest.id) ? '▼' : '▶' }}</span>
+                  <span class="expand-icon">{{ store.expandedQuestId === quest.id ? '▼' : '▶' }}</span>
                 </div>
 
                 <!-- Show phases and scripts when expanded -->
-                <div v-if="expandedQuests.has(quest.id)" class="quest-details">
+                <div v-if="store.expandedQuestId === quest.id" class="quest-details">
                   <div v-if="quest.phaseScripts && quest.phaseScripts.length > 0">
                     <div v-for="phaseScript in quest.phaseScripts" :key="phaseScript.phase" class="phase-group">
                       <div class="phase-header">Phase {{ phaseScript.phase }}</div>
@@ -86,7 +86,6 @@ const store = useFgoStore()
 const router = useRouter()
 const selectedRegion = ref<RegionType>(store.region)
 
-const expandedQuests = ref<Set<number>>(new Set())
 const containerRef = ref<HTMLElement | null>(null)
 
 watch(() => store.currentWarId, () => {
@@ -115,10 +114,10 @@ const backToWars = () => {
 }
 
 const toggleQuest = (questId: number) => {
-  if (expandedQuests.value.has(questId)) {
-    expandedQuests.value.delete(questId)
+  if (store.expandedQuestId === questId) {
+    store.expandedQuestId = null
   } else {
-    expandedQuests.value.add(questId)
+    store.expandedQuestId = questId
   }
 }
 
